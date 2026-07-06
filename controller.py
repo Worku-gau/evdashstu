@@ -401,90 +401,108 @@ def _run_demo() -> None:
             mqtt_manager.publish(payload)
             time.sleep(delay)
 
-        # ACCELERATION PHASE
+        # ACCELERATION PHASE - smooth ramp up
         logger.info("[DEMO] Accelerating from stop...")
-        for speed in range(0, 51, 5):
+        for speed in range(0, 81, 5):
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
                 return
             payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
             mqtt_manager.publish(payload)
-            time.sleep(0.3)
+            time.sleep(0.2)
 
         # LEFT TURN INTO HIGHWAY
         if demo_state.is_running():
             logger.info("[DEMO] Turning left onto highway...")
-            mqtt_manager.publish({"key": "1"})  # Left turn signal
-            time.sleep(3)
-            mqtt_manager.publish({"key": "1"})  # Turn off signal
+            mqtt_manager.publish({"key": "1"})  # Left turn signal on
             time.sleep(1)
+            mqtt_manager.publish({"key": "1"})  # Left turn signal off
+            time.sleep(0.5)
 
-        # HIGHWAY CRUISING WITH SPEED VARIATIONS
-        logger.info("[DEMO] Highway cruising - normal traffic flow")
-        speed_pattern = [70, 75, 70, 80, 75, 70]  # Speed variation
+        # HIGHWAY CRUISING WITH DYNAMIC SPEED CHANGES
+        logger.info("[DEMO] Highway cruising - dynamic speed variations")
+        speed_pattern = [60, 65, 60, 70, 65, 60, 75, 70]
+        current_speed = 60
         for target_speed in speed_pattern:
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
                 return
-            payload = {"joystickY": int(2048 - (target_speed - 50) * 40.96)}
-            mqtt_manager.publish(payload)
-            time.sleep(2)
+            # Smooth transition between speeds
+            step = 3 if target_speed > current_speed else -3
+            while (step > 0 and current_speed < target_speed) or (step < 0 and current_speed > target_speed):
+                if not demo_state.is_running():
+                    logger.info("[DEMO] Stopped by user")
+                    return
+                payload = {"joystickY": int(2048 - (current_speed - 50) * 40.96)}
+                mqtt_manager.publish(payload)
+                current_speed += step
+                time.sleep(0.15)
 
-        # PASSING MANEUVER
+        # ACCELERATING FOR PASSING
         if demo_state.is_running():
-            logger.info("[DEMO] Passing slower vehicle...")
-            for speed in range(70, 95, 5):
+            logger.info("[DEMO] Accelerating to pass...")
+            for speed in range(70, 100, 5):
                 if not demo_state.is_running():
                     logger.info("[DEMO] Stopped by user")
                     return
                 payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
                 mqtt_manager.publish(payload)
-                time.sleep(0.3)
-            time.sleep(1)
+                time.sleep(0.15)
 
-        # LANE CHANGE BACK
+        # RIGHT LANE CHANGE
         if demo_state.is_running():
-            logger.info("[DEMO] Changing lanes back...")
-            mqtt_manager.publish({"key": "2"})  # Right signal
-            time.sleep(3)
-            mqtt_manager.publish({"key": "2"})  # Turn off
-            time.sleep(1)
+            logger.info("[DEMO] Changing lanes right...")
+            mqtt_manager.publish({"key": "2"})  # Right signal on
+            time.sleep(0.8)
+            mqtt_manager.publish({"key": "2"})  # Right signal off
+            time.sleep(0.5)
 
-        # CONTINUE HIGHWAY CRUISE
-        logger.info("[DEMO] Settled back to cruise speed")
-        for _ in range(8):
+        # SETTLE BACK TO CRUISE SPEED WITH GENTLE DECELERATION
+        logger.info("[DEMO] Settling back to cruise speed")
+        for speed in range(100, 60, -5):
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
                 return
-            payload = {"joystickY": int(2048 - (75 - 50) * 40.96)}
+            payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
+            mqtt_manager.publish(payload)
+            time.sleep(0.15)
+
+        # STEADY CRUISE FOR A BIT
+        logger.info("[DEMO] Steady cruise")
+        for _ in range(4):
+            if not demo_state.is_running():
+                logger.info("[DEMO] Stopped by user")
+                return
+            payload = {"joystickY": int(2048 - (60 - 50) * 40.96)}
             mqtt_manager.publish(payload)
             time.sleep(1)
 
         # EXITING HIGHWAY
         if demo_state.is_running():
             logger.info("[DEMO] Exiting highway...")
-            mqtt_manager.publish({"key": "2"})  # Right signal
-            time.sleep(4)
-            mqtt_manager.publish({"key": "2"})  # Turn off
+            mqtt_manager.publish({"key": "2"})  # Right signal on
             time.sleep(1)
+            mqtt_manager.publish({"key": "2"})  # Right signal off
+            time.sleep(0.5)
 
         # DECELERATION PHASE
         logger.info("[DEMO] Slowing down for city driving...")
-        for speed in range(75, -1, -5):
+        for speed in range(60, 0, -5):
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
                 return
             payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
             mqtt_manager.publish(payload)
-            time.sleep(0.3)
+            time.sleep(0.2)
 
-        # CITY DRIVING WITH STOPS
-        logger.info("[DEMO] City driving - stop & go traffic")
-        for i in range(3):
+        # CITY DRIVING - STOP AND GO
+        logger.info("[DEMO] City driving with stops")
+        for cycle in range(3):
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
                 return
-            # Accelerate to 30 km/h
+            
+            # Accelerate gently
             for speed in range(0, 31, 5):
                 if not demo_state.is_running():
                     logger.info("[DEMO] Stopped by user")
@@ -492,16 +510,14 @@ def _run_demo() -> None:
                 payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
                 mqtt_manager.publish(payload)
                 time.sleep(0.2)
-            # Coast
+            
+            # Coast/cruise briefly
+            time.sleep(1)
+            
+            # Brake to stop
             payload = {"joystickY": 2048}
             mqtt_manager.publish(payload)
             time.sleep(1)
-            # Brake to stop
-            for _ in range(3):
-                if not demo_state.is_running():
-                    logger.info("[DEMO] Stopped by user")
-                    return
-                time.sleep(0.5)
 
         # FINAL PARKING
         if demo_state.is_running():
@@ -509,7 +525,7 @@ def _run_demo() -> None:
             mqtt_manager.publish({"key": "A"})  # Park gear
             time.sleep(1)
             mqtt_manager.publish({"joystickY": 2048})  # Neutral throttle
-            time.sleep(1)
+            time.sleep(0.5)
             logger.info("[DEMO] ✓ Complete! Vehicle parked.")
     finally:
         demo_state.stop()
