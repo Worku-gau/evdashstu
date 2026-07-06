@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-BROKER = os.getenv("MQTT_BROKER", "broker.emqx.io")
+BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
 PORT = int(os.getenv("MQTT_PORT", "1883"))
 TOPIC = os.getenv("MQTT_TOPIC", "ev/dashboard/control")
-MQTT_TIMEOUT = 60
-RECONNECT_INTERVAL = 5
-MAX_RECONNECT_ATTEMPTS = 10
+MQTT_TIMEOUT = 30
+RECONNECT_INTERVAL = 2
+MAX_RECONNECT_ATTEMPTS = 5
 
 # Application config
 app = Flask(__name__)
@@ -80,6 +80,7 @@ class MQTTManager:
         self.client: mqtt.Client | None = None
         self.connected = False
         self.reconnect_attempts = 0
+        self.reconnect_thread: threading.Thread | None = None
         self.lock = threading.Lock()
         self.stats = {
             "messages_sent": 0,
@@ -91,25 +92,32 @@ class MQTTManager:
     def connect(self) -> bool:
         """Establish MQTT connection with exponential backoff."""
         with self.lock:
-            if self.client is not None and self.connected:
+            if self.connected:
                 return True
+            
+            if self.client is None:
+                try:
+                    self.client = mqtt.Client(
+                        client_id="flask-ev-controller-v2",
+                        clean_session=True,
+                        protocol=mqtt.MQTTv311,
+                    )
+                    self.client.on_connect = self._on_connect
+                    self.client.on_disconnect = self._on_disconnect
+                    self.client.on_message = self._on_message
+                    self.client.on_publish = self._on_publish
+                    
+                    # Set socket options for reliability
+                    self.client.will_set(TOPIC, '{"error":"broker_lost"}', qos=1, retain=False)
+                except Exception as e:
+                    logger.error(f"[MQTT] Client creation failed: {e}")
+                    return False
 
             try:
-                self.client = mqtt.Client(
-                    client_id="flask-ev-controller-v2",
-                    clean_session=True,
-                    protocol=mqtt.MQTTv311,
-                )
-                self.client.on_connect = self._on_connect
-                self.client.on_disconnect = self._on_disconnect
-                self.client.on_message = self._on_message
-                self.client.on_publish = self._on_publish
-
                 logger.info(f"[MQTT] Connecting to {BROKER}:{PORT}...")
                 self.client.connect(BROKER, PORT, keepalive=MQTT_TIMEOUT)
                 self.client.loop_start()
                 return True
-
             except Exception as e:
                 logger.error(f"[MQTT] Connection failed: {e}")
                 return False
@@ -123,23 +131,42 @@ class MQTTManager:
     ) -> None:
         """Handle MQTT connect event."""
         if rc == 0:
-            self.connected = True
-            self.reconnect_attempts = 0
-            self.stats["connection_time"] = datetime.now().isoformat()
+            with self.lock:
+                self.connected = True
+                self.reconnect_attempts = 0
+                self.stats["connection_time"] = datetime.now().isoformat()
             logger.info(f"[MQTT] ✓ Connected to {BROKER}:{PORT}")
         else:
-            self.connected = False
+            with self.lock:
+                self.connected = False
             logger.warning(f"[MQTT] Connection failed with code {rc}")
 
     def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int) -> None:
         """Handle MQTT disconnect event."""
-        self.connected = False
+        with self.lock:
+            self.connected = False
+        
         if rc != 0:
             logger.warning(f"[MQTT] Unexpected disconnection (code {rc}). Reconnecting...")
-            self.reconnect_attempts += 1
-            if self.reconnect_attempts < MAX_RECONNECT_ATTEMPTS:
-                time.sleep(min(RECONNECT_INTERVAL * self.reconnect_attempts, 30))
+            # Schedule reconnect in background thread (non-blocking)
+            self._schedule_reconnect()
+
+    def _schedule_reconnect(self) -> None:
+        """Schedule reconnection attempt in background thread."""
+        if self.reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
+            logger.error("[MQTT] Max reconnection attempts exceeded")
+            return
+        
+        self.reconnect_attempts += 1
+        delay = min(RECONNECT_INTERVAL * (2 ** (self.reconnect_attempts - 1)), 30)
+        
+        def reconnect_task():
+            time.sleep(delay)
+            if not self.connected:
                 self.connect()
+        
+        thread = threading.Thread(target=reconnect_task, daemon=True)
+        thread.start()
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: Any) -> None:
         """Handle incoming MQTT messages (unused in controller)."""
@@ -157,8 +184,19 @@ class MQTTManager:
     def publish(self, payload: Dict[str, Any]) -> tuple[bool, str]:
         """Publish payload to MQTT topic."""
         try:
+            # Ensure connected before publishing
             if not self.connected:
-                self.connect()
+                if not self.connect():
+                    self.stats["messages_failed"] += 1
+                    return False, "Not connected"
+                # Wait briefly for connection
+                for _ in range(50):
+                    if self.connected:
+                        break
+                    time.sleep(0.1)
+                if not self.connected:
+                    self.stats["messages_failed"] += 1
+                    return False, "Connection timeout"
 
             payload_json = json.dumps(payload)
             result = self.client.publish(TOPIC, payload_json, qos=1, retain=False)
@@ -183,7 +221,8 @@ class MQTTManager:
         if self.client:
             self.client.loop_stop()
             self.client.disconnect()
-            self.connected = False
+            with self.lock:
+                self.connected = False
             logger.info("[MQTT] Disconnected")
 
 
@@ -309,7 +348,7 @@ def demo() -> tuple[Dict[str, Any], int]:
             {
                 "ok": True,
                 "message": "Demo started",
-                "duration": "~30 seconds",
+                "duration": "~60 seconds",
                 "timestamp": datetime.now().isoformat(),
             }
         ), 202
@@ -344,8 +383,9 @@ def demo_stop() -> tuple[Dict[str, Any], int]:
 
 
 def _run_demo() -> None:
-    """Execute realistic driving demo sequence."""
+    """Execute extended realistic driving demo sequence (~60 seconds)."""
     try:
+        # STARTUP SEQUENCE
         steps = [
             ("Park", 1, {"key": "A"}),
             ("Enable seatbelt", 1, {"key": "6"}),
@@ -361,7 +401,8 @@ def _run_demo() -> None:
             mqtt_manager.publish(payload)
             time.sleep(delay)
 
-        logger.info("[DEMO] Accelerating...")
+        # ACCELERATION PHASE
+        logger.info("[DEMO] Accelerating from stop...")
         for speed in range(0, 51, 5):
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
@@ -370,31 +411,66 @@ def _run_demo() -> None:
             mqtt_manager.publish(payload)
             time.sleep(0.3)
 
+        # LEFT TURN INTO HIGHWAY
         if demo_state.is_running():
-            logger.info("[DEMO] Merging left")
-            mqtt_manager.publish({"key": "1"})
-            time.sleep(2)
-            mqtt_manager.publish({"key": "1"})
+            logger.info("[DEMO] Turning left onto highway...")
+            mqtt_manager.publish({"key": "1"})  # Left turn signal
+            time.sleep(3)
+            mqtt_manager.publish({"key": "1"})  # Turn off signal
             time.sleep(1)
 
-        logger.info("[DEMO] Cruising at highway speed")
-        for _ in range(5):
+        # HIGHWAY CRUISING WITH SPEED VARIATIONS
+        logger.info("[DEMO] Highway cruising - normal traffic flow")
+        speed_pattern = [70, 75, 70, 80, 75, 70]  # Speed variation
+        for target_speed in speed_pattern:
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
                 return
-            payload = {"joystickY": int(2048 - (80 - 50) * 40.96)}
+            payload = {"joystickY": int(2048 - (target_speed - 50) * 40.96)}
             mqtt_manager.publish(payload)
-            time.sleep(0.5)
-
-        if demo_state.is_running():
-            logger.info("[DEMO] Exiting highway")
-            mqtt_manager.publish({"key": "2"})
             time.sleep(2)
-            mqtt_manager.publish({"key": "2"})
+
+        # PASSING MANEUVER
+        if demo_state.is_running():
+            logger.info("[DEMO] Passing slower vehicle...")
+            for speed in range(70, 95, 5):
+                if not demo_state.is_running():
+                    logger.info("[DEMO] Stopped by user")
+                    return
+                payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
+                mqtt_manager.publish(payload)
+                time.sleep(0.3)
             time.sleep(1)
 
-        logger.info("[DEMO] Slowing down")
-        for speed in range(80, -1, -5):
+        # LANE CHANGE BACK
+        if demo_state.is_running():
+            logger.info("[DEMO] Changing lanes back...")
+            mqtt_manager.publish({"key": "2"})  # Right signal
+            time.sleep(3)
+            mqtt_manager.publish({"key": "2"})  # Turn off
+            time.sleep(1)
+
+        # CONTINUE HIGHWAY CRUISE
+        logger.info("[DEMO] Settled back to cruise speed")
+        for _ in range(8):
+            if not demo_state.is_running():
+                logger.info("[DEMO] Stopped by user")
+                return
+            payload = {"joystickY": int(2048 - (75 - 50) * 40.96)}
+            mqtt_manager.publish(payload)
+            time.sleep(1)
+
+        # EXITING HIGHWAY
+        if demo_state.is_running():
+            logger.info("[DEMO] Exiting highway...")
+            mqtt_manager.publish({"key": "2"})  # Right signal
+            time.sleep(4)
+            mqtt_manager.publish({"key": "2"})  # Turn off
+            time.sleep(1)
+
+        # DECELERATION PHASE
+        logger.info("[DEMO] Slowing down for city driving...")
+        for speed in range(75, -1, -5):
             if not demo_state.is_running():
                 logger.info("[DEMO] Stopped by user")
                 return
@@ -402,11 +478,39 @@ def _run_demo() -> None:
             mqtt_manager.publish(payload)
             time.sleep(0.3)
 
-        if demo_state.is_running():
-            logger.info("[DEMO] Parking")
-            mqtt_manager.publish({"key": "A"})
+        # CITY DRIVING WITH STOPS
+        logger.info("[DEMO] City driving - stop & go traffic")
+        for i in range(3):
+            if not demo_state.is_running():
+                logger.info("[DEMO] Stopped by user")
+                return
+            # Accelerate to 30 km/h
+            for speed in range(0, 31, 5):
+                if not demo_state.is_running():
+                    logger.info("[DEMO] Stopped by user")
+                    return
+                payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
+                mqtt_manager.publish(payload)
+                time.sleep(0.2)
+            # Coast
+            payload = {"joystickY": 2048}
+            mqtt_manager.publish(payload)
             time.sleep(1)
-            logger.info("[DEMO] ✓ Complete!")
+            # Brake to stop
+            for _ in range(3):
+                if not demo_state.is_running():
+                    logger.info("[DEMO] Stopped by user")
+                    return
+                time.sleep(0.5)
+
+        # FINAL PARKING
+        if demo_state.is_running():
+            logger.info("[DEMO] Returning to parking...")
+            mqtt_manager.publish({"key": "A"})  # Park gear
+            time.sleep(1)
+            mqtt_manager.publish({"joystickY": 2048})  # Neutral throttle
+            time.sleep(1)
+            logger.info("[DEMO] ✓ Complete! Vehicle parked.")
     finally:
         demo_state.stop()
 

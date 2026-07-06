@@ -10,7 +10,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # MQTT CONFIGURATION
-BROKER = "broker.emqx.io"
+BROKER = "broker.hivemq.com"
 PORT = 1883
 TOPIC = "ev/dashboard/control"
 
@@ -82,60 +82,63 @@ class VehicleState(QObject):
     # PHYSICS ENGINE (Calculates Speed)
     # ==========================================
     def update_physics(self):
-        # 1. Normalize Joystick (0..4095 -> -1.0..1.0)
-        # Assuming 0 is FULL FORWARD, 4095 is FULL BACK
-        # Center is roughly 2048. Deadzone +/- 200
+        # 1. Normalize Joystick (0..4095 -> throttle value)
+        # 0 = full forward, 4095 = full reverse, 2048 = center/idle
         
         raw_y = self.last_joystick_y
         throttle = 0.0
         
-        # Deadzone Logic
+        # Deadzone Logic: only apply throttle outside deadzone band
         if raw_y < 1800: # Pushing Forward
-            throttle = (1800 - raw_y) / 1800.0 # 0.0 to 1.0
+            throttle = (1800 - raw_y) / 1800.0 # 0.0 to 1.0 (positive = forward)
         elif raw_y > 2300: # Pulling Back
-            throttle = -(raw_y - 2300) / 1795.0 # 0.0 to -1.0
+            throttle = -(raw_y - 2300) / 1795.0 # 0.0 to -1.0 (negative = reverse)
 
-        # 2. Gear Logic
-        elif self._gear == "P":
+        # 2. Apply Gear Logic
+        if self._gear == "P":
             # Park: complete lock, no movement
-            throttle = 0
             self._speed = 0
             
         elif self._gear == "N":
             # Neutral: free-wheel with friction
-            throttle = 0
-            if self._speed > 0: self._speed -= 0.5
-            elif self._speed < 0: self._speed += 0.5
-            if abs(self._speed) < 1: self._speed = 0
+            if self._speed > 0:
+                self._speed -= 0.5
+            elif self._speed < 0:
+                self._speed += 0.5
+            if abs(self._speed) < 1:
+                self._speed = 0
 
         elif self._gear == "D":
-            # Acceleration
+            # Drive: respond to throttle input
             if throttle > 0: 
-                self._speed += throttle * 0.8 # Acceleration rate
-            # Braking/Coast
+                self._speed += throttle * 1.5  # Acceleration rate
             else:
-                self._speed -= 0.5 # Friction
+                self._speed -= 0.5  # Friction/braking
                 
         elif self._gear == "R":
-            # Reverse has lower max speed
-            if throttle > 0: # Joystick Forward actually means reverse speed here? 
-                # Usually Joystick Back maps to Reverse speed in games, 
-                # but for simplicity, let's say Joystick Forward = Gas Pedal
-                self._speed += throttle * 0.5 
+            # Reverse: lower max speed
+            if throttle > 0:
+                self._speed += throttle * 0.8
             else:
                 self._speed -= 0.5
 
-        # 3. Cap Speed
+        # 3. Cap Speed based on gear
         if self._gear == "R":
-            if self._speed > 30: self._speed = 30
+            if self._speed > 30:
+                self._speed = 30
         else:
-            if self._speed > self.max_speed: self._speed = self.max_speed
+            if self._speed > self.max_speed:
+                self._speed = self.max_speed
         
-        if self._speed < 0: self._speed = 0
+        # Never go negative
+        if self._speed < 0:
+            self._speed = 0
 
         # 4. Update Power Display based on throttle
-        if throttle > 0: self._power = throttle * 100
-        else: self._power = -10 # Regen braking simulation
+        if throttle > 0:
+            self._power = throttle * 100
+        else:
+            self._power = -10  # Regen braking simulation
 
         self.stateChanged.emit()
 
