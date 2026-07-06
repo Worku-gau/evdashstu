@@ -80,33 +80,44 @@
       </div>
 
       <div class="panel">
-        <h2>Quick Toggles</h2>
+        <h2>Indicators & Safety</h2>
         <div class="btn-row">
           <button data-action="toggle" data-value="1" class="secondary">Left Turn</button>
           <button data-action="toggle" data-value="2" class="secondary">Right Turn</button>
           <button data-action="toggle" data-value="3" class="secondary">High Beam</button>
           <button data-action="toggle" data-value="4" class="secondary">Low Beam</button>
           <button data-action="toggle" data-value="5" class="secondary">Fog</button>
-          <button data-action="toggle" data-value="6" class="secondary">Seatbelt</button>
+          <button data-action="toggle" data-value="6" class="secondary">🔒 Seatbelt</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Warnings</h2>
+        <div class="btn-row">
           <button data-action="toggle" data-value="7" class="secondary">Airbag</button>
-          <button data-action="toggle" data-value="8" class="secondary">Door</button>
-          <button data-action="toggle" data-value="9" class="secondary">Parking Brake</button>
+          <button data-action="toggle" data-value="8" class="secondary">Door Open</button>
+          <button data-action="toggle" data-value="9" class="secondary">Park Brake</button>
           <button data-action="toggle" data-value="0" class="secondary">ABS</button>
-          <button data-action="toggle" data-value="*" class="secondary">Battery Low</button>
+          <button data-action="toggle" data-value="*" class="secondary">Battery</button>
           <button data-action="toggle" data-value="#" class="secondary">Fault</button>
         </div>
       </div>
 
       <div class="panel">
-        <h2>Joystick</h2>
-        <div class="slider-wrap">
-          <div class="slider-label"><span>Reverse</span><span>Neutral</span><span>Forward</span></div>
-          <input id="joystick" type="range" min="0" max="4095" value="2048" step="1">
+        <h2>Throttle Control</h2>
+        <div class=\"slider-wrap\">
+          <div class=\"slider-label\"><span>Reverse</span><span>Idle</span><span>Forward</span></div>
+          <input id=\"joystick\" type=\"range\" min=\"0\" max=\"100\" value=\"50\" step=\"1\">
+          <div id=\"throttleStatus\" style=\"margin-top: 10px; color: #38bdf8; font-size: 13px; text-align: center;\">Position: Idle (50%)</div>
         </div>
       </div>
     </div>
 
-    <div class="footer">The controller publishes to the same MQTT topic used by the dashboard.</div>
+    <div style=\"margin-top: 20px; text-align: center;\">
+      <button id=\"demoBtn\" style=\"width: auto; padding: 14px 28px; font-size: 16px; background: #22c55e;\">▶ Start Demo: Realistic Driving</button>
+    </div>
+
+    <div class=\"footer\">The controller publishes to the same MQTT topic used by the dashboard. Use the Demo button to experience a complete car journey: P → seatbelt check → D → acceleration → highway cruise → exit.</div>
   </div>
 
   <script>
@@ -138,7 +149,31 @@
     });
 
     joystickEl.addEventListener('input', () => {
-      sendControl('joystick', joystickEl.value);
+      const val = parseInt(joystickEl.value);
+      let status = 'Idle (50%)';
+      if (val < 40) status = 'Reverse ' + (50 - val) + '%';
+      else if (val > 60) status = 'Forward ' + (val - 50) + '%';
+      document.getElementById('throttleStatus').textContent = `Position: ${status}`;
+      sendControl('joystick', val);
+    });
+
+    document.getElementById('demoBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('demoBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Demo running...';
+      try {
+        const response = await fetch('/api/demo', { method: 'POST' });
+        const data = await response.json();
+        statusEl.textContent = 'Demo started - watch the dashboard!';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = '▶ Start Demo: Realistic Driving';
+        }, 35000);
+      } catch (error) {
+        statusEl.textContent = 'Demo failed: ' + error.message;
+        btn.disabled = false;
+        btn.textContent = '▶ Start Demo: Realistic Driving';
+      }
     });
 
     async function checkHealth() {

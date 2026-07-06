@@ -96,13 +96,16 @@ class VehicleState(QObject):
             throttle = -(raw_y - 2300) / 1795.0 # 0.0 to -1.0
 
         # 2. Gear Logic
-        if self._gear == "P" or self._gear == "N":
-            throttle = 0 # Engine disconnect
+        elif self._gear == "P":
+            # Park: complete lock, no movement
+            throttle = 0
+            self._speed = 0
             
-            # Friction (slow down naturally)
+        elif self._gear == "N":
+            # Neutral: free-wheel with friction
+            throttle = 0
             if self._speed > 0: self._speed -= 0.5
             elif self._speed < 0: self._speed += 0.5
-            
             if abs(self._speed) < 1: self._speed = 0
 
         elif self._gear == "D":

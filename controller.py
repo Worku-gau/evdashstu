@@ -83,7 +83,11 @@ def control() -> tuple[Any, int]:
 
     elif action == "joystick":
         try:
-            joystick_value = int(value)
+            # Map slider 0-100 to joystick 0-4095
+            # Slider 0 = 4095 (full reverse), 50 = 2048 (center), 100 = 0 (full forward)
+            slider_val = int(value)
+            joystick_value = int(2048 - (slider_val - 50) * 40.96)
+            joystick_value = max(0, min(4095, joystick_value))  # Clamp to valid range
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": "invalid joystick value"}), 400
         payload = {"joystickY": joystick_value}
@@ -93,6 +97,80 @@ def control() -> tuple[Any, int]:
 
     result = publish_payload(payload)
     return jsonify({"ok": True, **result}), 200
+
+
+@app.post("/api/demo")
+def demo() -> tuple[Any, int]:
+    """Run a realistic car driving demo: P → seatbelt check → D → accel → cruise → indicators"""
+    import time
+    import threading
+
+    def run_demo():
+        print("[DEMO] Starting realistic car cruising experience...")
+
+        # 1. Check Park gear
+        print("[DEMO] Car in Park")
+        publish_payload({"key": "A"})  # P gear
+        time.sleep(1)
+
+        # 2. Enable seatbelt
+        print("[DEMO] Checking seatbelt...")
+        publish_payload({"key": "6"})  # Toggle seatbelt
+        time.sleep(1)
+
+        # 3. Shift to Neutral
+        print("[DEMO] Shifting to Neutral")
+        publish_payload({"key": "C"})  # N gear
+        time.sleep(0.5)
+
+        # 4. Shift to Drive
+        print("[DEMO] Shifting to Drive")
+        publish_payload({"key": "D"})  # D gear
+        time.sleep(1)
+
+        # 5. Acceleration phase (0-50)
+        print("[DEMO] Accelerating...")
+        for speed in range(0, 51, 5):
+            publish_payload({"joystickY": int(2048 - (speed - 50) * 40.96)})
+            time.sleep(0.3)
+
+        # 6. Turn on left indicator
+        print("[DEMO] Merging left...")
+        publish_payload({"key": "1"})  # Left turn
+        time.sleep(2)
+        publish_payload({"key": "1"})  # Turn off
+        time.sleep(1)
+
+        # 7. Cruise at highway speed (80%)
+        print("[DEMO] Cruising at highway speed...")
+        for _ in range(5):
+            publish_payload({"joystickY": int(2048 - (80 - 50) * 40.96)})
+            time.sleep(0.5)
+
+        # 8. Turn on right indicator
+        print("[DEMO] Exiting highway...")
+        publish_payload({"key": "2"})  # Right turn
+        time.sleep(2)
+        publish_payload({"key": "2"})  # Turn off
+        time.sleep(1)
+
+        # 9. Slow down (80 -> 0)
+        print("[DEMO] Slowing down...")
+        for speed in range(80, -1, -5):
+            publish_payload({"joystickY": int(2048 - (speed - 50) * 40.96)})
+            time.sleep(0.3)
+
+        # 10. Return to Park
+        print("[DEMO] Parking...")
+        publish_payload({"key": "A"})  # P gear
+        time.sleep(1)
+
+        print("[DEMO] Complete!")
+
+    thread = threading.Thread(target=run_demo, daemon=True)
+    thread.start()
+
+    return jsonify({"ok": True, "message": "Demo started (check terminal for progress)"}), 200
 
 
 if __name__ == "__main__":
