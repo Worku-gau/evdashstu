@@ -137,6 +137,26 @@
       box-shadow: var(--shadow);
     }
 
+    .card:nth-child(2) {
+      background: linear-gradient(135deg, rgba(31, 41, 55, 0.8), rgba(15, 23, 42, 0.8));
+      border-color: rgba(14, 165, 233, 0.3);
+    }
+
+    .card:nth-child(3) {
+      background: linear-gradient(135deg, rgba(31, 41, 55, 0.8), rgba(15, 23, 42, 0.8));
+      border-color: rgba(6, 182, 212, 0.3);
+    }
+
+    .card:nth-child(4) {
+      background: linear-gradient(135deg, rgba(31, 41, 55, 0.8), rgba(15, 23, 42, 0.8));
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .card:nth-child(5) {
+      background: linear-gradient(135deg, rgba(31, 41, 55, 0.8), rgba(15, 23, 42, 0.8));
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+
     .card-title {
       font-size: 14px;
       font-weight: 700;
@@ -212,6 +232,27 @@
     .btn.secondary {
       background: var(--surface-light);
       color: var(--text-primary);
+      position: relative;
+    }
+
+    .btn.secondary:nth-child(1) {
+      background: linear-gradient(135deg, #1e40af, #1e3a8a);
+    }
+
+    .btn.secondary:nth-child(2) {
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    }
+
+    .btn.secondary:nth-child(3) {
+      background: linear-gradient(135deg, #db2777, #be185d);
+    }
+
+    .btn.secondary:nth-child(4) {
+      background: linear-gradient(135deg, #ea580c, #c2410c);
+    }
+
+    .btn.secondary:nth-child(5) {
+      background: linear-gradient(135deg, #0891b2, #0e7490);
     }
 
     .btn.secondary:hover {
@@ -324,19 +365,39 @@
     .demo-section {
       margin-top: 24px;
       text-align: center;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
     }
 
     .btn-demo {
       font-size: 16px;
       padding: 16px 32px;
       background: linear-gradient(135deg, var(--success), #059669);
-      width: 100%;
-      max-width: 400px;
       box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);
+      flex: 0 1 auto;
     }
 
     .btn-demo:hover {
       box-shadow: 0 15px 40px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-demo-stop {
+      font-size: 16px;
+      padding: 16px 32px;
+      background: linear-gradient(135deg, var(--danger), #dc2626);
+      box-shadow: 0 10px 30px rgba(239, 68, 68, 0.3);
+      display: none;
+      flex: 0 1 auto;
+    }
+
+    .btn-demo-stop.visible {
+      display: inline-block;
+    }
+
+    .btn-demo-stop:hover {
+      box-shadow: 0 15px 40px rgba(239, 68, 68, 0.4);
     }
 
     /* ============ FOOTER ============ */
@@ -471,7 +532,10 @@
     <!-- DEMO MODE -->
     <div class="demo-section">
       <button class="btn btn-demo" id="demoBtn" aria-label="Start realistic driving demo">
-        ▶ START DEMO: Realistic Driving Experience
+        ▶ START DEMO
+      </button>
+      <button class="btn btn-demo-stop" id="demoBtnStop" aria-label="Stop running demo">
+        ⏹ STOP DEMO
       </button>
     </div>
 
@@ -502,6 +566,7 @@
       throttleSlider: document.getElementById("throttleSlider"),
       throttleStatus: document.getElementById("throttleStatus"),
       demoBtn: document.getElementById("demoBtn"),
+      demoBtnStop: document.getElementById("demoBtnStop"),
     };
 
     // ============ API FUNCTIONS ============
@@ -581,8 +646,9 @@
 
     elements.demoBtn.addEventListener("click", async () => {
       elements.demoBtn.disabled = true;
+      elements.demoBtnStop.classList.add("visible");
       const originalText = elements.demoBtn.textContent;
-      elements.demoBtn.textContent = "⏳ Running Demo...";
+      elements.demoBtn.textContent = "⏳ Demo running...";
 
       try {
         const response = await fetch("/api/demo", { method: "POST" });
@@ -590,18 +656,49 @@
 
         if (data.ok) {
           setTimeout(() => {
-            elements.demoBtn.disabled = false;
-            elements.demoBtn.textContent = originalText;
+            if (elements.demoBtnStop.classList.contains("visible")) {
+              elements.demoBtn.disabled = false;
+              elements.demoBtn.textContent = originalText;
+              elements.demoBtnStop.classList.remove("visible");
+            }
           }, 35000);
         } else {
           elements.demoBtn.disabled = false;
           elements.demoBtn.textContent = originalText;
-          alert("Demo failed");
+          elements.demoBtnStop.classList.remove("visible");
+          alert("Demo failed: " + data.error);
         }
       } catch (error) {
         console.error("Demo error:", error);
         elements.demoBtn.disabled = false;
         elements.demoBtn.textContent = originalText;
+        elements.demoBtnStop.classList.remove("visible");
+      }
+    });
+
+    elements.demoBtnStop.addEventListener("click", async () => {
+      elements.demoBtnStop.disabled = true;
+      elements.demoBtnStop.textContent = "⏹ Stopping...";
+
+      try {
+        const response = await fetch("/api/demo/stop", { method: "POST" });
+        const data = await response.json();
+
+        if (data.ok) {
+          elements.demoBtn.disabled = false;
+          elements.demoBtn.textContent = "▶ START DEMO";
+          elements.demoBtnStop.classList.remove("visible");
+          elements.demoBtnStop.disabled = false;
+          elements.demoBtnStop.textContent = "⏹ STOP DEMO";
+        } else {
+          elements.demoBtnStop.disabled = false;
+          elements.demoBtnStop.textContent = "⏹ STOP DEMO";
+          alert("Stop failed: " + data.error);
+        }
+      } catch (error) {
+        console.error("Stop error:", error);
+        elements.demoBtnStop.disabled = false;
+        elements.demoBtnStop.textContent = "⏹ STOP DEMO";
       }
     });
 

@@ -41,6 +41,36 @@ app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
 # ============================================================================
+# DEMO STATE
+# ============================================================================
+class DemoState:
+    """Track demo execution state."""
+    def __init__(self):
+        self.running = False
+        self.lock = threading.Lock()
+    
+    def start(self) -> bool:
+        """Start demo if not already running."""
+        with self.lock:
+            if self.running:
+                return False
+            self.running = True
+            return True
+    
+    def stop(self) -> None:
+        """Stop demo."""
+        with self.lock:
+            self.running = False
+    
+    def is_running(self) -> bool:
+        """Check if demo is running."""
+        with self.lock:
+            return self.running
+
+
+demo_state = DemoState()
+
+# ============================================================================
 # MQTT STATE & MANAGEMENT
 # ============================================================================
 class MQTTManager:
@@ -269,6 +299,9 @@ def control() -> tuple[Dict[str, Any], int]:
 def demo() -> tuple[Dict[str, Any], int]:
     """Start realistic driving demo."""
     try:
+        if not demo_state.start():
+            return jsonify({"ok": False, "error": "demo already running"}), 409
+        
         logger.info("[DEMO] Starting realistic car cruising experience...")
         thread = threading.Thread(target=_run_demo, daemon=True)
         thread.start()
@@ -282,65 +315,100 @@ def demo() -> tuple[Dict[str, Any], int]:
         ), 202
     except Exception as e:
         logger.exception(f"[DEMO] Error: {e}")
+        demo_state.stop()
         return jsonify({"ok": False, "error": "demo failed"}), 500
+
+
+@app.route("/api/demo/stop", methods=["POST"])
+def demo_stop() -> tuple[Dict[str, Any], int]:
+    """Stop running demo."""
+    try:
+        if not demo_state.is_running():
+            return jsonify({"ok": False, "error": "demo not running"}), 400
+        
+        logger.info("[DEMO] Stopping demo...")
+        demo_state.stop()
+        mqtt_manager.publish({"key": "A"})  # Park
+        mqtt_manager.publish({"joystickY": 2048})  # Neutral throttle
+        
+        return jsonify(
+            {
+                "ok": True,
+                "message": "Demo stopped",
+                "timestamp": datetime.now().isoformat(),
+            }
+        ), 200
+    except Exception as e:
+        logger.exception(f"[DEMO] Stop error: {e}")
+        return jsonify({"ok": False, "error": "stop failed"}), 500
 
 
 def _run_demo() -> None:
     """Execute realistic driving demo sequence."""
-    steps = [
-        ("Park", 1, {"key": "A"}),
-        ("Enable seatbelt", 1, {"key": "6"}),
-        ("Shift to Neutral", 0.5, {"key": "C"}),
-        ("Shift to Drive", 1, {"key": "D"}),
-    ]
+    try:
+        steps = [
+            ("Park", 1, {"key": "A"}),
+            ("Enable seatbelt", 1, {"key": "6"}),
+            ("Shift to Neutral", 0.5, {"key": "C"}),
+            ("Shift to Drive", 1, {"key": "D"}),
+        ]
 
-    # Execute initial steps
-    for name, delay, payload in steps:
-        logger.info(f"[DEMO] {name}")
-        mqtt_manager.publish(payload)
-        time.sleep(delay)
+        for name, delay, payload in steps:
+            if not demo_state.is_running():
+                logger.info("[DEMO] Stopped by user")
+                return
+            logger.info(f"[DEMO] {name}")
+            mqtt_manager.publish(payload)
+            time.sleep(delay)
 
-    # Acceleration phase
-    logger.info("[DEMO] Accelerating...")
-    for speed in range(0, 51, 5):
-        payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
-        mqtt_manager.publish(payload)
-        time.sleep(0.3)
+        logger.info("[DEMO] Accelerating...")
+        for speed in range(0, 51, 5):
+            if not demo_state.is_running():
+                logger.info("[DEMO] Stopped by user")
+                return
+            payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
+            mqtt_manager.publish(payload)
+            time.sleep(0.3)
 
-    # Left turn
-    logger.info("[DEMO] Merging left")
-    mqtt_manager.publish({"key": "1"})
-    time.sleep(2)
-    mqtt_manager.publish({"key": "1"})
-    time.sleep(1)
+        if demo_state.is_running():
+            logger.info("[DEMO] Merging left")
+            mqtt_manager.publish({"key": "1"})
+            time.sleep(2)
+            mqtt_manager.publish({"key": "1"})
+            time.sleep(1)
 
-    # Highway cruise
-    logger.info("[DEMO] Cruising at highway speed")
-    for _ in range(5):
-        payload = {"joystickY": int(2048 - (80 - 50) * 40.96)}
-        mqtt_manager.publish(payload)
-        time.sleep(0.5)
+        logger.info("[DEMO] Cruising at highway speed")
+        for _ in range(5):
+            if not demo_state.is_running():
+                logger.info("[DEMO] Stopped by user")
+                return
+            payload = {"joystickY": int(2048 - (80 - 50) * 40.96)}
+            mqtt_manager.publish(payload)
+            time.sleep(0.5)
 
-    # Right turn exit
-    logger.info("[DEMO] Exiting highway")
-    mqtt_manager.publish({"key": "2"})
-    time.sleep(2)
-    mqtt_manager.publish({"key": "2"})
-    time.sleep(1)
+        if demo_state.is_running():
+            logger.info("[DEMO] Exiting highway")
+            mqtt_manager.publish({"key": "2"})
+            time.sleep(2)
+            mqtt_manager.publish({"key": "2"})
+            time.sleep(1)
 
-    # Deceleration
-    logger.info("[DEMO] Slowing down")
-    for speed in range(80, -1, -5):
-        payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
-        mqtt_manager.publish(payload)
-        time.sleep(0.3)
+        logger.info("[DEMO] Slowing down")
+        for speed in range(80, -1, -5):
+            if not demo_state.is_running():
+                logger.info("[DEMO] Stopped by user")
+                return
+            payload = {"joystickY": int(2048 - (speed - 50) * 40.96)}
+            mqtt_manager.publish(payload)
+            time.sleep(0.3)
 
-    # Return to park
-    logger.info("[DEMO] Parking")
-    mqtt_manager.publish({"key": "A"})
-    time.sleep(1)
-
-    logger.info("[DEMO] ✓ Complete!")
+        if demo_state.is_running():
+            logger.info("[DEMO] Parking")
+            mqtt_manager.publish({"key": "A"})
+            time.sleep(1)
+            logger.info("[DEMO] ✓ Complete!")
+    finally:
+        demo_state.stop()
 
 
 # ============================================================================
