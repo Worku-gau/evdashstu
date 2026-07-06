@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EV Dashboard Controller</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --good: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, var(--bg), #020617);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(100%, 760px);
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.35);
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { color: var(--muted); margin-top: 0; }
+    .status { display: inline-block; padding: 6px 10px; border-radius: 999px; background: var(--panel-2); color: var(--text); margin-bottom: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .panel { background: var(--panel-2); border-radius: 16px; padding: 16px; }
+    .panel h2 { margin: 0 0 12px; font-size: 18px; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+    button, input[type=range] { width: 100%; }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 15px;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+    }
+    button.secondary { background: #334155; }
+    button.active { outline: 2px solid white; transform: translateY(-1px); }
+    .slider-wrap { margin-top: 10px; }
+    .slider-label { display:flex; justify-content:space-between; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+    input[type=range] { accent-color: var(--accent); }
+    .footer { margin-top: 16px; color: var(--muted); font-size: 13px; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>EV Dashboard Controller</h1>
+    <p>Use this page to send gear and light commands to the dashboard over MQTT.</p>
+    <div id="status" class="status">Checking MQTT connection…</div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Gear</h2>
+        <div class="btn-row" id="gearButtons">
+          <button data-action="gear" data-value="P" class="secondary">P</button>
+          <button data-action="gear" data-value="R" class="secondary">R</button>
+          <button data-action="gear" data-value="N" class="secondary">N</button>
+          <button data-action="gear" data-value="D" class="secondary">D</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Quick Toggles</h2>
+        <div class="btn-row">
+          <button data-action="toggle" data-value="1" class="secondary">Left Turn</button>
+          <button data-action="toggle" data-value="2" class="secondary">Right Turn</button>
+          <button data-action="toggle" data-value="3" class="secondary">High Beam</button>
+          <button data-action="toggle" data-value="4" class="secondary">Low Beam</button>
+          <button data-action="toggle" data-value="5" class="secondary">Fog</button>
+          <button data-action="toggle" data-value="6" class="secondary">Seatbelt</button>
+          <button data-action="toggle" data-value="7" class="secondary">Airbag</button>
+          <button data-action="toggle" data-value="8" class="secondary">Door</button>
+          <button data-action="toggle" data-value="9" class="secondary">Parking Brake</button>
+          <button data-action="toggle" data-value="0" class="secondary">ABS</button>
+          <button data-action="toggle" data-value="*" class="secondary">Battery Low</button>
+          <button data-action="toggle" data-value="#" class="secondary">Fault</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Joystick</h2>
+        <div class="slider-wrap">
+          <div class="slider-label"><span>Reverse</span><span>Neutral</span><span>Forward</span></div>
+          <input id="joystick" type="range" min="0" max="4095" value="2048" step="1">
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">The controller publishes to the same MQTT topic used by the dashboard.</div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const joystickEl = document.getElementById('joystick');
+
+    async function sendControl(action, value) {
+      const response = await fetch('/api/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, value })
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        statusEl.textContent = 'Send failed: ' + (data.error || 'unknown error');
+      } else {
+        statusEl.textContent = 'Command sent';
+      }
+    }
+
+    document.querySelectorAll('button[data-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('button[data-action="gear"]').forEach(b => b.classList.remove('active'));
+        if (btn.dataset.action === 'gear') {
+          btn.classList.add('active');
+        }
+        sendControl(btn.dataset.action, btn.dataset.value);
+      });
+    });
+
+    joystickEl.addEventListener('input', () => {
+      sendControl('joystick', joystickEl.value);
+    });
+
+    async function checkHealth() {
+      try {
+        const response = await fetch('/health');
+        const data = await response.json();
+        statusEl.textContent = `MQTT: ${data.mqtt}`;
+      } catch (error) {
+        statusEl.textContent = 'MQTT unavailable';
+      }
+    }
+
+    checkHealth();
+    setInterval(checkHealth, 5000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+
+<svg
+   fill="#000000"
+   height="800px"
+   width="800px"
+   version="1.1"
+   id="Layer_1"
+   viewBox="0 0 512.009 512.009"
+   xml:space="preserve"
+   sodipodi:docname="parking_brake.svg"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs6" /><sodipodi:namedview
+   id="namedview6"
+   pagecolor="#ffffff"
+   bordercolor="#000000"
+   borderopacity="0.25"
+   inkscape:showpageshadow="2"
+   inkscape:pageopacity="0.0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#d1d1d1"
+   inkscape:zoom="1.13875"
+   inkscape:cx="399.56092"
+   inkscape:cy="400"
+   inkscape:window-width="1920"
+   inkscape:window-height="1171"
+   inkscape:window-x="-9"
+   inkscape:window-y="-9"
+   inkscape:window-maximized="1"
+   inkscape:current-layer="Layer_1" />
+<g
+   id="g6"
+   style="fill:#d40000">
+	<g
+   id="g5"
+   style="fill:#d40000">
+		<g
+   id="g4"
+   style="fill:#d40000">
+			<path
+   d="M437.024,74.984c-8.331-8.331-21.839-8.331-30.17,0s-8.331,21.839,0,30.17c83.317,83.317,83.317,218.394,0.002,301.69     c-8.332,8.33-8.334,21.838-0.003,30.17c8.33,8.332,21.838,8.334,30.17,0.003C537.004,337.059,537.004,174.964,437.024,74.984z"
+   id="path1"
+   style="fill:#d40000" />
+			<path
+   d="M105.153,105.165c8.332-8.33,8.334-21.838,0.003-30.17c-8.33-8.332-21.838-8.334-30.17-0.004     c-99.981,99.958-99.981,262.054-0.002,362.033c8.331,8.331,21.839,8.331,30.17,0c8.331-8.331,8.331-21.839,0-30.17     C21.838,323.538,21.838,188.46,105.153,105.165z"
+   id="path2"
+   style="fill:#d40000" />
+			<path
+   d="M256.004,85.338c-94.257,0-170.667,76.41-170.667,170.667s76.41,170.667,170.667,170.667s170.667-76.41,170.667-170.667     S350.261,85.338,256.004,85.338z M256.004,384.004c-70.693,0-128-57.307-128-128s57.307-128,128-128s128,57.307,128,128     S326.697,384.004,256.004,384.004z"
+   id="path3"
+   style="fill:#d40000" />
+			<path
+   d="M277.338,149.338h-42.667c-11.782,0-21.333,9.551-21.333,21.333v85.333v85.333c0,11.782,9.551,21.333,21.333,21.333     c11.782,0,21.333-9.551,21.333-21.333v-64h21.333c35.355,0,64-28.645,64-64S312.693,149.338,277.338,149.338z M277.338,234.671     h-21.333v-42.667h21.333c11.791,0,21.333,9.542,21.333,21.333S289.129,234.671,277.338,234.671z"
+   id="path4"
+   style="fill:#d40000" />
+		</g>
+	</g>
+</g>
+</svg>
